@@ -58,6 +58,9 @@ def image_processing(message_center):
                 if total_pixels > 0 and red_pixels / total_pixels > 0.05:  # 5% threshold
                     detected_red_light = True
                     message_center.add_event("Red stoplight detected")
+                    print("Red stoplight detected. Pausing program for 10 seconds.")
+                    time.sleep(10)
+                    return  # Exit image_processing after pause
     else:
         message_center.add_no_object_detected()
 #end of copilot additions
