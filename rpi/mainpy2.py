@@ -16,90 +16,149 @@ from yolo_utils import *
 from gps_utils import *
 from MessageCenter import MessageCenter
 
-# Define color ranges in HSV for stoplight detection
-color_ranges = {
-    "red": ([0, 120, 70], [10, 255, 255]),
-    "yellow": ([22, 80, 2], [35, 255, 255]),
-    "green": ([36, 100, 100], [86, 255, 255]),
-}
-
-# Focal length and known width of a stoplight (in meters)
-KNOWN_WIDTH = 0.3  # Approximate width of a stoplight
-FOCAL_LENGTH = 700  # Adjust based on your camera calibration
-
-def estimate_distance(known_width, focal_length, perceived_width):
-    """Estimate the distance to an object using the pinhole camera model."""
-    if perceived_width > 0:
-        return (known_width * focal_length) / perceived_width
-    return -1  # Return -1 if perceived width is invalid
-
-def detect_stoplight(frame, message_center):
-    """Detect stoplight status and send signals."""
-    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-
-    stoplight_status = "Unknown"
-    stoplight_distance = -1
-    for color_name, (lower, upper) in color_ranges.items():
-        lower_bound = np.array(lower, dtype=np.uint8)
-        upper_bound = np.array(upper, dtype=np.uint8)
-        mask = cv2.inRange(hsv_frame, lower_bound, upper_bound)
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        for contour in contours:
-            if cv2.contourArea(contour) > 500:  # Filter small contours
-                x, y, w, h = cv2.boundingRect(contour)
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 255), 2)
-                cv2.putText(frame, color_name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-                stoplight_status = color_name.capitalize()
-                stoplight_distance = estimate_distance(KNOWN_WIDTH, FOCAL_LENGTH, w)
-
-    # Provide signal based on stoplight status and distance
-    if stoplight_status == "Green":
-        signal = "Move"
-    elif stoplight_status in ["Red", "Yellow"] and stoplight_distance > 0 and stoplight_distance <= 0.3048:  # 1 foot in meters
-        signal = "Stop"
-    else:
-        signal = "Unknown"
-
-    # Send signal to message center
-    message_center.add_stoplight_signal(stoplight_status, stoplight_distance, signal)
-
-    # Display stoplight status, distance, and signal on the frame
-    cv2.putText(frame, f"Stoplight: {stoplight_status}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    if stoplight_distance > 0:
-        cv2.putText(frame, f"Distance: {stoplight_distance:.2f} m", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    cv2.putText(frame, f"Signal: {signal}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
 def image_processing(message_center):
     frame = picam2.capture_array()
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
     # Object detection
+    # objects: crosswalk, speedlimit, stop, trafficlight
     outputs = convert_to_blob(frame, network, 128, 128)
     bounding_boxes, class_objects, confidence_probs = object_detection(
         outputs, frame, 0.5
     )
 
-    # Sort the detected objects by confidence and only send the best 2 detections
+    # sort the detected objets by confidence and only send the best 2 detections
     bounding_boxes, class_objects, confidence_probs = sort_by_confidence(
         2, confidence_probs, bounding_boxes, class_objects
     )
+
+    detected_red_light = False
 
     if len(bounding_boxes) > 0:
         for i in range(len(bounding_boxes)):
             message_center.add_yolo_detection(
                 class_objects[i], bounding_boxes[i], confidence_probs[i]
             )
+            # --- Red stoplight detection ---
+            if class_objects[i] == "trafficlight":
+                x, y, w, h = bounding_boxes[i]
+                roi = frame[y:y+h, x:x+w]
+                hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+                # Red can wrap around the hue, so we check two ranges
+                lower_red1 = np.array([0, 100, 100])
+                upper_red1 = np.array([10, 255, 255])
+                lower_red2 = np.array([160, 100, 100])
+                upper_red2 = np.array([179, 255, 255])
+                mask1 = cv2.inRange(hsv_roi, lower_red1, upper_red1)
+                mask2 = cv2.inRange(hsv_roi, lower_red2, upper_red2)
+                red_mask = cv2.bitwise_or(mask1, mask2)
+                red_pixels = cv2.countNonZero(red_mask)
+                total_pixels = roi.shape[0] * roi.shape[1]
+                if total_pixels > 0 and red_pixels / total_pixels > 0.05:  # 5% threshold
+                    detected_red_light = True
+                    message_center.add_event("Red stoplight detected")
     else:
         message_center.add_no_object_detected()
 
-    # Detect stoplight status
-    detect_stoplight(frame, message_center)
 
-    # Display the frame
-    cv2.imshow("Image Processing", frame)
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        return False
-    return True
+def gps_processing():
+    data, addr = sock.recvfrom(1024)
+    line = data.decode().strip()
 
-# The rest of the code remains unchanged
+    try:
+        distances_m = list(map(float, line.split(",")))
+    except ValueError:
+        pass
+
+    position, error = trilaterate_2D(distances_m)
+    # if position is not None:
+    #     print(f"[POS] x = {position[0]:.2f} ft, y = {position[1]:.2f} ft, RMSE = {error:.2f} ft")
+
+
+def main():
+    # parse command line arguments
+    parser = argparse.ArgumentParser(description="My program with options")
+    parser.add_argument(
+        "-gps",
+        "--gps",
+        action="store_true",
+        default=False,
+        help="Enable GPS in the program",
+    )
+    parser.add_argument(
+        "-d",
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Enable debug mode, printing debug messages",
+    )
+    args = parser.parse_args()
+
+    # initialize the camera and GPS
+    camera_initialization()
+
+    # initialize gps if enabled
+    if args.gps:
+        gps_initialization()
+
+    # initialize the message center
+    message_center = MessageCenter("/dev/ttyUSB0", 9600, args.debug)
+
+    # Welcome message :)
+    print_seal()
+
+    # system start time
+    program_start_time = time.time()
+    time_stamp = program_start_time
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    try:
+        tty.setcbreak(fd)  # or tty.setraw(fd)
+        while True:
+            image_processing(message_center)
+
+            if args.gps:
+                gps_processing()
+
+            # process messages
+            message_center.processing_tick()
+
+            # handle user input
+            if select.select([sys.stdin], [], [], 0)[0]:
+                ch = sys.stdin.read(1)
+                # print(f"You typed: {ch}")
+                if ch == "q":
+                    print("\nUser quit command detected. Exiting program...")
+                    break
+                else:
+                    print(f"\nUnrecognized command: {ch}")
+
+            # delay for a short period to avoid busy waiting
+            time.sleep(0.1)
+
+            # print time elapsed since start and time interval without newline
+            interval = (time.time() - time_stamp) * 1000
+            time_stamp = time.time()
+            print(
+                f"\rTime elapsed: {get_time_millis(program_start_time):.2f} ms; loop interval: {interval:.02f} ms",
+                end="",
+            )
+            print("\b" * 40, end="")  # Clear the line
+
+    except KeyboardInterrupt:
+        print("Keyboard interrupt detected. Exiting...")
+        # do some cleanup if necessary
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    return
+
+
+if __name__ == "__main__":
+    main()
