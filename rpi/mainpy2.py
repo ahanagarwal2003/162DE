@@ -16,7 +16,7 @@ from yolo_utils import *
 from gps_utils import *
 from MessageCenter import MessageCenter
 
-
+# Start of copilot additions
 def image_processing(message_center):
     frame = picam2.capture_array()
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
@@ -60,7 +60,7 @@ def image_processing(message_center):
                     message_center.add_event("Red stoplight detected")
     else:
         message_center.add_no_object_detected()
-
+#end of copilot additions
 
 def gps_processing():
     data, addr = sock.recvfrom(1024)
