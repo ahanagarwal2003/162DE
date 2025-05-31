@@ -40,6 +40,7 @@ def image_processing(message_center):
             message_center.add_yolo_detection(
                 class_objects[i], bounding_boxes[i], confidence_probs[i]
             )
+            time.sleeo(10)
             # --- Red stoplight detection ---
             if class_objects[i] == "trafficlight":
                 x, y, w, h = bounding_boxes[i]
