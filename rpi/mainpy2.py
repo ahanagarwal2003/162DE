@@ -40,28 +40,30 @@ def image_processing(message_center):
             message_center.add_yolo_detection(
                 class_objects[i], bounding_boxes[i], confidence_probs[i]
             )
-            time.sleep(10)
-            # --- Red stoplight detection ---
-            if class_objects[i] == "trafficlight":
-                x, y, w, h = bounding_boxes[i]
-                roi = frame[y:y+h, x:x+w]
-                hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-                # Red can wrap around the hue, so we check two ranges
-                lower_red1 = np.array([0, 100, 100])
-                upper_red1 = np.array([10, 255, 255])
-                lower_red2 = np.array([160, 100, 100])
-                upper_red2 = np.array([179, 255, 255])
-                mask1 = cv2.inRange(hsv_roi, lower_red1, upper_red1)
-                mask2 = cv2.inRange(hsv_roi, lower_red2, upper_red2)
-                red_mask = cv2.bitwise_or(mask1, mask2)
-                red_pixels = cv2.countNonZero(red_mask)
-                total_pixels = roi.shape[0] * roi.shape[1]
-                if total_pixels > 0 and red_pixels / total_pixels > 0.05:  # 5% threshold
-                    detected_red_light = True
-                    message_center.add_event("Red stoplight detected")
-                    print("Red stoplight detected. Pausing program for 10 seconds.")
-                    time.sleep(10)
-                    return  # Exit image_processing after pause
+            if confidence_probs[i] > 0.9:  # Only process high-confidence detections
+                        time.sleep(10)
+            else:
+                # --- Red stoplight detection ---
+                if class_objects[i] == "trafficlight":
+                    x, y, w, h = bounding_boxes[i]
+                    roi = frame[y:y+h, x:x+w]
+                    hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+                    # Red can wrap around the hue, so we check two ranges
+                    lower_red1 = np.array([0, 100, 100])
+                    upper_red1 = np.array([10, 255, 255])
+                    lower_red2 = np.array([160, 100, 100])
+                    upper_red2 = np.array([179, 255, 255])
+                    mask1 = cv2.inRange(hsv_roi, lower_red1, upper_red1)
+                    mask2 = cv2.inRange(hsv_roi, lower_red2, upper_red2)
+                    red_mask = cv2.bitwise_or(mask1, mask2)
+                    red_pixels = cv2.countNonZero(red_mask)
+                    total_pixels = roi.shape[0] * roi.shape[1]
+                    if total_pixels > 0 and red_pixels / total_pixels > 0.05:  # 5% threshold
+                        detected_red_light = True
+                        message_center.add_event("Red stoplight detected")
+                        print("Red stoplight detected. Pausing program for 10 seconds.")
+                        time.sleep(10)
+                        return  # Exit image_processing after pause
     else:
         message_center.add_no_object_detected()
 #end of copilot additions
