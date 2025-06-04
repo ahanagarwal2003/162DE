@@ -46,6 +46,7 @@ def image_processing(message_center: MessageCenter):
             status = 0 # red light = 0, green light = 1
             confidence = 0.0
             
+<<<<<<< HEAD
             x, y, w, h = bounding_boxes[i]
             roi = frame[y:y+h, x:x+w]
             hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
@@ -65,6 +66,12 @@ def image_processing(message_center: MessageCenter):
                 status = 1
             print(f"[INFO] Traffic light status: {'Red' if status == 0 else 'Green'}")
         
+=======
+            ## TODO: add traffic light detection logic here
+            ## ~~~
+            ## END TODO
+            
+>>>>>>> d46bbe6a20b87d2cb3c2b0e03e97fa2666fa8b11
             message_center.add_traffic_light(status, confidence)
     else:
         pass
