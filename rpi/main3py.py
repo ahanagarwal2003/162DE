@@ -46,7 +46,6 @@ def image_processing(message_center: MessageCenter):
             status = 0 # red light = 0, green light = 1
             confidence = 0.0
             
-<<<<<<< HEAD
             x, y, w, h = bounding_boxes[i]
             roi = frame[y:y+h, x:x+w]
             hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
